@@ -27,10 +27,16 @@
         "READ_MEDIA_IMAGES",
         "READ_MEDIA_VIDEO",
         "READ_MEDIA_AUDIO"
-      ]
+      ],
+      "package": "com.nere_tolotra.ocrapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "f0572ad7-8c97-46d8-ae92-c95e47bf3148"
+      }
     }
   }
 }

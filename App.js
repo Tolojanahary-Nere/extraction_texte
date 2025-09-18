@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Image, Button, ScrollView, StyleSheet, Alert, Platform, Clipboard } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Picker } from '@react-native-picker/picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy'; // Using legacy API
 import * as Sharing from 'expo-sharing';
 
 const App = () => {
@@ -75,41 +75,78 @@ const App = () => {
     }
   };
 
+  const deleteHistoryItem = async (id) => {
+    Alert.alert(
+      'Confirmer la suppression',
+      'Êtes-vous sûr de vouloir supprimer cet élément de l\'historique ? Cette action est irréversible.',
+      [
+        { text: 'Annuler', style: 'cancel' },
+        {
+          text: 'Supprimer',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const response = await fetch(`https://fastapi-ocr-8b6j.onrender.com/history/${id}`, {
+                method: 'DELETE',
+              });
+              if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(errorText || 'Échec de la suppression');
+              }
+              const data = await response.json();
+              // Mettre à jour l'historique localement
+              setHistory(history.filter(item => item.id !== id));
+              Alert.alert('Succès', data.message || 'Élément supprimé avec succès !');
+            } catch (error) {
+              Alert.alert('Erreur', `Échec de la suppression : ${error.message}`);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const exportData = async () => {
     try {
-      const response = await fetch(`https://fastapi-ocr-8b6j.onrender.com/export/${selectedFormat}`);
+      const response = await fetch(`https://fastapi-ocr-8b6j.onrender.com/export/${selectedFormat}`, {
+        method: 'GET',
+      });
       if (!response.ok) throw new Error('Export failed');
 
+      const blob = await response.blob();
+      const fileName = `ocr_results.${selectedFormat}`;
+      const downloadPath = `${FileSystem.documentDirectory}Downloads/${fileName}`; // Suggested path
+
       if (Platform.OS === 'web') {
-        const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `ocr_results.${selectedFormat}`;
+        a.download = fileName;
         a.click();
       } else {
-        const blob = await response.blob();
-        const reader = new FileReader();
-
-        reader.onload = async () => {
-          const base64Data = reader.result.split(',')[1];
-          const fileUri = FileSystem.documentDirectory + `ocr_results.${selectedFormat}`;
-
-          await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
-
-          if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(fileUri);
-          } else {
-            Alert.alert('Saved', `File saved to: ${fileUri}`);
+        // For mobile (Android/iOS), use downloadAsync with legacy API
+        const downloadRes = await FileSystem.downloadAsync(
+          response.url,
+          downloadPath,
+          {
+            headers: {
+              'Content-Type': response.headers.get('content-type'),
+            },
+            md5: true, // Optional: for integrity check
           }
-        };
+        );
 
-        reader.readAsDataURL(blob);
+        if (downloadRes.status === 200) {
+          Alert.alert('Success', `File saved to: ${downloadRes.uri}`);
+          if (await Sharing.isAvailableAsync()) {
+            await Sharing.shareAsync(downloadRes.uri);
+          }
+        } else {
+          throw new Error(`Download failed with status: ${downloadRes.status}`);
+        }
       }
     } catch (error) {
-      Alert.alert('Error', 'Failed to export data. Check backend connection.');
+      Alert.alert('Error', `Failed to export data: ${error.message}`);
     }
   };
 
@@ -167,8 +204,11 @@ const App = () => {
             <Text style={styles.subtitle}>History</Text>
             {history.map((item) => (
               <View key={item.id} style={styles.historyItem}>
-                <Text>{item.filename} - {item.text.substring(0, 20)}...</Text>
-                <Button title="Copy Text" onPress={() => copyToClipboard(item.text)} color="#6200EE" />
+                <Text style={styles.historyText}>{item.filename} - {item.text.substring(0, 20)}...</Text>
+                <View style={styles.buttonsContainer}>
+                  <Button title="Copy Text" onPress={() => copyToClipboard(item.text)} color="#6200EE" />
+                  <Button title="Delete" onPress={() => deleteHistoryItem(item.id)} color="#FF0000" />
+                </View>
               </View>
             ))}
           </View>
@@ -205,7 +245,17 @@ const styles = StyleSheet.create({
   resultText: { fontSize: 16 },
   history: { marginVertical: 10 },
   subtitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10 },
-  historyItem: { padding: 10, backgroundColor: '#fff', borderRadius: 8, marginBottom: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  historyItem: { 
+    padding: 10, 
+    backgroundColor: '#fff', 
+    borderRadius: 8, 
+    marginBottom: 5, 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center' 
+  },
+  historyText: { flex: 1, marginRight: 10 },
+  buttonsContainer: { flexDirection: 'row', gap: 5 },
   export: { marginVertical: 10 },
   picker: { height: 50, width: '100%', backgroundColor: '#fff', borderRadius: 8 },
 });
