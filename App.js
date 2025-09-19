@@ -25,8 +25,7 @@ const App = () => {
   const pickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
+      allowsEditing: false, // Désactiver l'édition pour conserver la taille originale
       quality: 1,
     });
 
@@ -94,7 +93,6 @@ const App = () => {
                 throw new Error(errorText || 'Échec de la suppression');
               }
               const data = await response.json();
-              // Mettre à jour l'historique localement
               setHistory(history.filter(item => item.id !== id));
               Alert.alert('Succès', data.message || 'Élément supprimé avec succès !');
             } catch (error) {
@@ -115,8 +113,7 @@ const App = () => {
 
       const blob = await response.blob();
       const fileName = `ocr_results.${selectedFormat}`;
-      const downloadPath = `${FileSystem.documentDirectory}Downloads/${fileName}`; // Suggested path
-
+      
       if (Platform.OS === 'web') {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
@@ -124,28 +121,27 @@ const App = () => {
         a.download = fileName;
         a.click();
       } else {
-        // For mobile (Android/iOS), use downloadAsync with legacy API
-        const downloadRes = await FileSystem.downloadAsync(
-          response.url,
-          downloadPath,
-          {
-            headers: {
-              'Content-Type': response.headers.get('content-type'),
-            },
-            md5: true, // Optional: for integrity check
-          }
-        );
-
-        if (downloadRes.status === 200) {
-          Alert.alert('Success', `File saved to: ${downloadRes.uri}`);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const base64Data = reader.result.split(',')[1];
+          const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+          await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          
           if (await Sharing.isAvailableAsync()) {
-            await Sharing.shareAsync(downloadRes.uri);
+            await Sharing.shareAsync(fileUri, {
+              mimeType: `application/${selectedFormat}`,
+              dialogTitle: `Export as ${selectedFormat.toUpperCase()}`,
+            });
+          } else {
+            Alert.alert('Error', 'Sharing is not available on this device.');
           }
-        } else {
-          throw new Error(`Download failed with status: ${downloadRes.status}`);
-        }
+        };
+        reader.readAsDataURL(blob);
       }
     } catch (error) {
+      console.error('Export Error:', error);
       Alert.alert('Error', `Failed to export data: ${error.message}`);
     }
   };
